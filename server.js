@@ -8,7 +8,9 @@ app.use(express.json());
 // ======================
 const SECRET = "mySuperSecret123";
 
-// optional DB (safe fallback)
+// ======================
+// MONGO (optional)
+// ======================
 let dbEnabled = false;
 let PlayerModel = null;
 
@@ -30,6 +32,10 @@ try {
         ownedSkins: Array,
         equippedSkin: String,
         inventorySize: Number,
+
+        // ✅ CASES ADDED
+        cases: Object,
+
         time: String
     });
 
@@ -40,7 +46,7 @@ try {
 }
 
 // ======================
-// MEMORY FALLBACK DB
+// MEMORY DB
 // ======================
 let memoryPlayers = [];
 
@@ -76,6 +82,7 @@ app.post("/player-join", async (req, res) => {
         ownedSkins,
         equippedSkin,
         inventorySize,
+        cases,        // ✅ FIXED
         secret
     } = req.body;
 
@@ -88,6 +95,10 @@ app.post("/player-join", async (req, res) => {
         ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
         equippedSkin: equippedSkin || "None",
         inventorySize: inventorySize || 0,
+
+        // ✅ SAFE CASE STORAGE
+        cases: cases && typeof cases === "object" ? cases : {},
+
         time: new Date().toISOString()
     };
 
@@ -106,7 +117,7 @@ app.post("/player-join", async (req, res) => {
         else memoryPlayers.push(playerData);
     }
 
-    console.log("PLAYER:", username);
+    console.log("PLAYER:", username, "| cases:", playerData.cases);
 
     res.sendStatus(200);
 });
@@ -140,7 +151,7 @@ app.get("/players/:id", async (req, res) => {
 });
 
 // ======================
-// BIG GAMES STYLE DASHBOARD
+// DASHBOARD
 // ======================
 app.get("/dashboard", async (req, res) => {
 
@@ -157,6 +168,10 @@ app.get("/dashboard", async (req, res) => {
         const headshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${p.userId}&width=420&height=420&format=png`;
 
         const skins = Array.isArray(p.ownedSkins) ? p.ownedSkins : [];
+        const cases = p.cases || {};
+
+        let caseCount = 0;
+        for (let k in cases) caseCount += cases[k];
 
         return `
         <div class="card">
@@ -171,12 +186,16 @@ app.get("/dashboard", async (req, res) => {
 
             <div class="stats">
                 <div><span>Equipped</span><b>${p.equippedSkin}</b></div>
-                <div><span>Inventory</span><b>${p.inventorySize}</b></div>
                 <div><span>Skins</span><b>${skins.length}</b></div>
+                <div><span>Cases</span><b>${caseCount}</b></div>
             </div>
 
             <div class="knives">
                 ${skins.map(k => `<div class="tag" style="color:${getRarityColor(k)}">${k}</div>`).join("")}
+            </div>
+
+            <div class="cases">
+                ${Object.keys(cases).map(c => `<div class="tag">🎁 ${c}: ${cases[c]}</div>`).join("")}
             </div>
 
             <div class="time">
@@ -209,9 +228,7 @@ body {
     font-weight: bold;
 }
 
-.wrap {
-    padding: 25px;
-}
+.wrap { padding: 25px; }
 
 .grid {
     display: grid;
@@ -224,12 +241,6 @@ body {
     border: 1px solid #1e2635;
     border-radius: 12px;
     padding: 15px;
-    transition: 0.2s;
-}
-
-.card:hover {
-    transform: translateY(-4px);
-    border-color: #2a3a55;
 }
 
 .top {
@@ -242,16 +253,6 @@ body {
     width: 45px;
     height: 45px;
     border-radius: 10px;
-    border: 1px solid #2a3550;
-}
-
-.name {
-    font-weight: bold;
-}
-
-.id {
-    font-size: 11px;
-    color: #7d8aa5;
 }
 
 .stats {
@@ -268,16 +269,7 @@ body {
     text-align: center;
 }
 
-.stats span {
-    font-size: 10px;
-    color: #7d8aa5;
-}
-
-.stats b {
-    font-size: 13px;
-}
-
-.knives {
+.knives, .cases {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
@@ -317,10 +309,9 @@ body {
 });
 
 // ======================
-// START SERVER
+// START
 // ======================
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-    console.log("🚀 PRO SERVER RUNNING ON PORT", PORT);
+    console.log("🚀 SERVER RUNNING ON PORT", PORT);
 });
