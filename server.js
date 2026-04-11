@@ -5,40 +5,75 @@ app.use(express.json());
 
 const SECRET = "mySuperSecret123";
 
-// store joins
-let joins = [];
+// memory storage
+let players = [];
 
+// HOME TEST
 app.get("/", (req, res) => {
-    res.send("Join Tracker API running!");
+    res.send("✅ Roblox Inventory API Online");
 });
 
-// ROBLOX sends join data here
+// RECEIVE ROBLOX DATA
 app.post("/player-join", (req, res) => {
-    const { userId, username, secret } = req.body;
+    const {
+        userId,
+        username,
+        ownedSkins,
+        equippedSkin,
+        inventorySize,
+        secret
+    } = req.body;
 
+    // security check
     if (secret !== SECRET) {
+        console.log("❌ Bad secret attempt");
         return res.status(403).send("Bad secret");
     }
 
-    if (!userId) return res.sendStatus(400);
+    if (!userId || !username) {
+        return res.status(400).send("Missing data");
+    }
 
-    joins.push({
+    const playerData = {
         userId,
         username,
-        time: Date.now()
-    });
+        ownedSkins: ownedSkins || [],
+        equippedSkin: equippedSkin || "None",
+        inventorySize: inventorySize || 0,
+        time: new Date().toISOString()
+    };
 
-    console.log("Player joined:", username, userId);
+    players.push(playerData);
+
+    console.log("================================");
+    console.log("PLAYER:", username);
+    console.log("ID:", userId);
+    console.log("EQUIPPED:", equippedSkin);
+    console.log("COUNT:", inventorySize);
+    console.log("ITEMS:", ownedSkins);
+    console.log("================================");
 
     res.sendStatus(200);
 });
 
-// view joins (browser test)
-app.get("/joins", (req, res) => {
-    res.json(joins);
+// VIEW ALL DATA
+app.get("/players", (req, res) => {
+    res.json(players);
 });
 
+// VIEW SINGLE PLAYER
+app.get("/players/:id", (req, res) => {
+    const player = players.find(p => p.userId == req.params.id);
+
+    if (!player) {
+        return res.status(404).json({ error: "Not found" });
+    }
+
+    res.json(player);
+});
+
+// START
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log("Join Tracker running on port", PORT);
+    console.log("🚀 API running on port", PORT);
 });
