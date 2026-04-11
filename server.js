@@ -3,26 +3,17 @@ const app = express();
 
 app.use(express.json());
 
-// SECURITY KEY (must match Roblox)
 const SECRET = "mySuperSecret123";
 
-// storage (temporary memory)
+// memory storage
 let players = [];
 
-/*
----------------------------------
-HOME TEST ROUTE
----------------------------------
-*/
+// HOME TEST
 app.get("/", (req, res) => {
-    res.send("✅ Roblox Inventory API is running!");
+    res.send("✅ Roblox Inventory API Online");
 });
 
-/*
----------------------------------
-ROBLOX SENDS DATA HERE
----------------------------------
-*/
+// RECEIVE ROBLOX DATA
 app.post("/player-join", (req, res) => {
     const {
         userId,
@@ -43,7 +34,7 @@ app.post("/player-join", (req, res) => {
         return res.status(400).send("Missing data");
     }
 
-    const entry = {
+    const playerData = {
         userId,
         username,
         ownedSkins: ownedSkins || [],
@@ -52,52 +43,37 @@ app.post("/player-join", (req, res) => {
         time: new Date().toISOString()
     };
 
-    players.push(entry);
+    players.push(playerData);
 
-    console.log("====================================");
-    console.log("👤 PLAYER:", username);
-    console.log("🆔 USERID:", userId);
-    console.log("⭐ EQUIPPED:", equippedSkin);
-    console.log("📦 COUNT:", inventorySize);
-    console.log("🎒 ITEMS:", ownedSkins);
-    console.log("====================================");
+    console.log("================================");
+    console.log("PLAYER:", username);
+    console.log("ID:", userId);
+    console.log("EQUIPPED:", equippedSkin);
+    console.log("COUNT:", inventorySize);
+    console.log("ITEMS:", ownedSkins);
+    console.log("================================");
 
     res.sendStatus(200);
 });
 
-/*
----------------------------------
-VIEW ALL DATA (TEST IN BROWSER)
----------------------------------
-*/
+// VIEW ALL DATA
 app.get("/players", (req, res) => {
     res.json(players);
 });
 
-/*
----------------------------------
-GET SINGLE PLAYER
----------------------------------
-*/
+// VIEW SINGLE PLAYER
 app.get("/players/:id", (req, res) => {
-    const id = req.params.id;
-
-    const player = players.find(p => p.userId == id);
+    const player = players.find(p => p.userId == req.params.id);
 
     if (!player) {
-        return res.status(404).json({ error: "Player not found" });
+        return res.status(404).json({ error: "Not found" });
     }
 
     res.json(player);
 });
 
-/*
----------------------------------
-START SERVER
----------------------------------
-*/
+// START
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-    console.log("🚀 Inventory API running on port", PORT);
+    console.log("🚀 API running on port", PORT);
 });
