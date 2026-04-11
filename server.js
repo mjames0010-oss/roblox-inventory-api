@@ -1,35 +1,3 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
-
-app.use(express.json());
-
-let players = {};
-
-//--------------------------------------------------
-// ROBLOX API ENDPOINT
-//--------------------------------------------------
-app.post("/player-join", (req, res) => {
-    const data = req.body;
-
-    players[data.userId] = {
-        ...data,
-        lastSeen: Date.now()
-    };
-
-    // 🔥 LIVE UPDATE TO DASHBOARD
-    io.emit("playerUpdate", players[data.userId]);
-
-    res.json({ ok: true });
-});
-
-//--------------------------------------------------
-// DASHBOARD (INLINE HTML)
-//--------------------------------------------------
 app.get("/", (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -105,9 +73,6 @@ let selected = null;
 const sidebar = document.getElementById("sidebar");
 const main = document.getElementById("main");
 
-//----------------------------
-// RENDER LIST
-//----------------------------
 function render() {
     sidebar.innerHTML = "";
 
@@ -123,9 +88,6 @@ function render() {
     });
 }
 
-//----------------------------
-// SHOW PLAYER
-//----------------------------
 function show(p) {
     selected = p;
 
@@ -141,19 +103,14 @@ function show(p) {
         }
     }
 
-    main.innerHTML = `
-        <h2>👤 ${p.username}</h2>
-        <p>Equipped: <b>${p.equippedSkin}</b></p>
-        <p>Inventory Size: ${p.inventorySize}</p>
-
-        <h3>Inventory</h3>
-        ${inv}
-    `;
+    main.innerHTML =
+        "<h2>👤 " + p.username + "</h2>" +
+        "<p>Equipped: <b>" + p.equippedSkin + "</b></p>" +
+        "<p>Inventory Size: " + p.inventorySize + "</p>" +
+        "<h3>Inventory</h3>" +
+        inv;
 }
 
-//----------------------------
-// SOCKET
-//----------------------------
 socket.on("init", (data) => {
     players = data;
     render();
@@ -172,16 +129,4 @@ socket.on("playerUpdate", (p) => {
 </body>
 </html>
     `);
-});
-
-//--------------------------------------------------
-// SOCKET INIT
-//--------------------------------------------------
-io.on("connection", (socket) => {
-    socket.emit("init", players);
-});
-
-//--------------------------------------------------
-server.listen(3000, () => {
-    console.log("🚀 Admin Panel running on http://localhost:3000");
 });
