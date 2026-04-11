@@ -3,25 +3,19 @@ const app = express();
 
 app.use(express.json());
 
-/*
-  HOME ROUTE
-  This fixes "Not Found" when you open the link
-*/
+const SECRET = "mySuperSecret123";
+let inventories = {};
+
 app.get("/", (req, res) => {
     res.send("Inventory API is running!");
 });
 
-/*
-  MEMORY STORAGE (temporary)
-  This stores inventories while server is running
-*/
-let inventories = {};
-
-/*
-  ROBLOX → SEND INVENTORY HERE
-*/
 app.post("/update-inventory", (req, res) => {
-    const { userId, data } = req.body;
+    const { userId, data, secret } = req.body;
+
+    if (secret !== SECRET) {
+        return res.status(403).send("Invalid secret");
+    }
 
     if (!userId) return res.sendStatus(400);
 
@@ -32,20 +26,15 @@ app.post("/update-inventory", (req, res) => {
     res.sendStatus(200);
 });
 
-/*
-  DISCORD BOT → READ INVENTORY HERE
-*/
 app.get("/inventory/:userId", (req, res) => {
     const userId = req.params.userId;
 
     res.json(inventories[userId] || {
-        OwnedSkins: []
+        OwnedSkins: [],
+        EquippedSkin: null
     });
 });
 
-/*
-  START SERVER (IMPORTANT FOR RENDER)
-*/
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
