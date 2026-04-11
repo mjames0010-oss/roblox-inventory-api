@@ -28,6 +28,7 @@ app.post("/player-join", (req, res) => {
         secret
     } = req.body;
 
+    // security check
     if (secret !== SECRET) {
         console.log("❌ Bad secret attempt");
         return res.status(403).send("Bad secret");
@@ -40,7 +41,7 @@ app.post("/player-join", (req, res) => {
     const playerData = {
         userId,
         username,
-        ownedSkins: ownedSkins || [],
+        ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
         equippedSkin: equippedSkin || "None",
         inventorySize: inventorySize || 0,
         time: new Date().toISOString()
@@ -81,128 +82,139 @@ app.get("/players/:id", (req, res) => {
 
 
 // ======================
-// BIG-GAMES STYLE DASHBOARD
+// DASHBOARD (WITH ROBLOX HEADSHOTS)
 // ======================
 app.get("/dashboard", (req, res) => {
 
-    const rows = players.map(p => `
-        <div class="row">
-            <div class="cell">${p.username}</div>
-            <div class="cell">${p.userId}</div>
-            <div class="cell">${p.equippedSkin}</div>
-            <div class="cell">${p.inventorySize}</div>
-            <div class="cell knives">
-                ${(p.ownedSkins || []).map(k => `<span class="tag">${k}</span>`).join("")}
+    const cards = players.map(p => {
+
+        const headshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${p.userId}&width=420&height=420&format=png`;
+
+        const skins = Array.isArray(p.ownedSkins) ? p.ownedSkins : [];
+
+        return `
+        <div class="card">
+
+            <div class="top">
+                <img class="avatar" src="${headshot}" />
+                <div>
+                    <div class="name">${p.username}</div>
+                    <div class="id">ID: ${p.userId}</div>
+                </div>
             </div>
-            <div class="cell">${new Date(p.time).toLocaleString()}</div>
+
+            <div class="stats">
+                <div><span>Equipped</span><b>${p.equippedSkin}</b></div>
+                <div><span>Inventory</span><b>${p.inventorySize}</b></div>
+                <div><span>Skins</span><b>${skins.length}</b></div>
+            </div>
+
+            <div class="knives">
+                ${skins.map(k => `<div class="tag">${k}</div>`).join("")}
+            </div>
+
+            <div class="time">
+                ${new Date(p.time).toLocaleString()}
+            </div>
+
         </div>
-    `).join("");
+        `;
+    }).join("");
 
     res.send(`
 <!DOCTYPE html>
 <html>
 <head>
-<title>Database</title>
+<title>Player Dashboard</title>
+
 <style>
 body {
     margin: 0;
     font-family: Arial;
-    background: #0b0f17;
+    background: #0a0c10;
     color: white;
-}
-
-/* TOP BAR */
-.topbar {
-    height: 60px;
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    background: #0f1623;
-    border-bottom: 1px solid #1f2a3a;
-    font-weight: bold;
-    letter-spacing: 1px;
-}
-
-/* LAYOUT */
-.layout {
-    display: flex;
-}
-
-/* SIDEBAR */
-.sidebar {
-    width: 220px;
-    background: #0f1623;
-    height: calc(100vh - 60px);
-    border-right: 1px solid #1f2a3a;
-    padding: 15px;
-}
-
-.sidebar h3 {
-    font-size: 12px;
-    color: #6b7c93;
-    margin-top: 20px;
-}
-
-.sidebar div {
-    padding: 10px;
-    margin: 5px 0;
-    background: #121b2b;
-    border-radius: 6px;
-    font-size: 13px;
-}
-
-/* MAIN */
-.main {
-    flex: 1;
-    padding: 20px;
-}
-
-/* SEARCH */
-.search {
-    margin-bottom: 15px;
-}
-
-.search input {
-    width: 100%;
-    padding: 10px;
-    background: #0f1623;
-    border: 1px solid #1f2a3a;
-    color: white;
-    border-radius: 6px;
-    outline: none;
-}
-
-/* TABLE */
-.table {
-    border-radius: 10px;
-    overflow: hidden;
-    border: 1px solid #1f2a3a;
-}
-
-.header, .row {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr 2fr 1fr;
 }
 
 .header {
-    background: #141d2e;
-    padding: 12px;
+    padding: 18px 25px;
+    background: #111522;
+    border-bottom: 1px solid #1f2633;
+    font-size: 18px;
     font-weight: bold;
-    font-size: 13px;
-    color: #9fb0c3;
 }
 
-.row {
-    padding: 12px;
-    border-top: 1px solid #1b263a;
-    background: #0f1623;
+.wrap {
+    padding: 25px;
 }
 
-.row:hover {
-    background: #141f33;
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 15px;
 }
 
-.cell {
+/* CARD */
+.card {
+    background: #121826;
+    border: 1px solid #1e2635;
+    border-radius: 12px;
+    padding: 15px;
+    transition: 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+}
+
+/* TOP */
+.top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+/* AVATAR */
+.avatar {
+    width: 45px;
+    height: 45px;
+    border-radius: 10px;
+    border: 1px solid #2a3550;
+}
+
+/* TEXT */
+.name {
+    font-weight: bold;
+    font-size: 15px;
+}
+
+.id {
+    font-size: 11px;
+    color: #7d8aa5;
+}
+
+/* STATS */
+.stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.stats div {
+    background: #0e1422;
+    padding: 8px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.stats span {
+    display: block;
+    font-size: 10px;
+    color: #7d8aa5;
+}
+
+.stats b {
     font-size: 13px;
 }
 
@@ -214,55 +226,33 @@ body {
 }
 
 .tag {
-    background: #1b2a44;
-    padding: 3px 8px;
-    border-radius: 6px;
     font-size: 11px;
+    padding: 4px 8px;
+    background: #1a2440;
+    border-radius: 6px;
     color: #9ecbff;
 }
+
+/* TIME */
+.time {
+    margin-top: 10px;
+    font-size: 10px;
+    color: #6d7b95;
+}
 </style>
+
 </head>
 
 <body>
 
-<div class="topbar">
-    ⚔ PLAYER DATABASE
+<div class="header">
+    ⚔ Player Dashboard
 </div>
 
-<div class="layout">
-
-    <div class="sidebar">
-        <h3>DATABASE</h3>
-        <div>Players (${players.length})</div>
-        <div>Inventory Logs</div>
-        <div>Live Sessions</div>
-
-        <h3>TOOLS</h3>
-        <div>Search</div>
-        <div>Analytics</div>
+<div class="wrap">
+    <div class="grid">
+        ${cards || "<p>No players yet</p>"}
     </div>
-
-    <div class="main">
-
-        <div class="search">
-            <input placeholder="Search players..." />
-        </div>
-
-        <div class="table">
-            <div class="header">
-                <div>Username</div>
-                <div>User ID</div>
-                <div>Equipped</div>
-                <div>Inv</div>
-                <div>Knives</div>
-                <div>Last Seen</div>
-            </div>
-
-            ${rows || `<div class="row">No players yet</div>`}
-        </div>
-
-    </div>
-
 </div>
 
 </body>
