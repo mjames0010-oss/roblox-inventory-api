@@ -28,7 +28,6 @@ app.post("/player-join", (req, res) => {
         secret
     } = req.body;
 
-    // security check
     if (secret !== SECRET) {
         console.log("❌ Bad secret attempt");
         return res.status(403).send("Bad secret");
@@ -71,7 +70,7 @@ app.get("/players", (req, res) => {
 // API: SINGLE PLAYER
 // ======================
 app.get("/players/:id", (req, res) => {
-    const player = players.find(p => p.userId == req.params.id);
+    const player = players.find(p => String(p.userId) === String(req.params.id));
 
     if (!player) {
         return res.status(404).json({ error: "Not found" });
@@ -82,13 +81,16 @@ app.get("/players/:id", (req, res) => {
 
 
 // ======================
-// DASHBOARD (WITH ROBLOX HEADSHOTS)
+// DASHBOARD (ROBLOX HEADSHOTS + SAFE UI)
 // ======================
 app.get("/dashboard", (req, res) => {
 
     const cards = players.map(p => {
 
-        const headshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${p.userId}&width=420&height=420&format=png`;
+        const safeUsername = (p.username || "Unknown").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const safeUserId = p.userId || "0";
+
+        const headshot = `https://www.roblox.com/headshot-thumbnail/image?userId=${safeUserId}&width=420&height=420&format=png`;
 
         const skins = Array.isArray(p.ownedSkins) ? p.ownedSkins : [];
 
@@ -98,14 +100,14 @@ app.get("/dashboard", (req, res) => {
             <div class="top">
                 <img class="avatar" src="${headshot}" />
                 <div>
-                    <div class="name">${p.username}</div>
-                    <div class="id">ID: ${p.userId}</div>
+                    <div class="name">${safeUsername}</div>
+                    <div class="id">ID: ${safeUserId}</div>
                 </div>
             </div>
 
             <div class="stats">
-                <div><span>Equipped</span><b>${p.equippedSkin}</b></div>
-                <div><span>Inventory</span><b>${p.inventorySize}</b></div>
+                <div><span>Equipped</span><b>${p.equippedSkin || "None"}</b></div>
+                <div><span>Inventory</span><b>${p.inventorySize || 0}</b></div>
                 <div><span>Skins</span><b>${skins.length}</b></div>
             </div>
 
@@ -164,6 +166,7 @@ body {
 
 .card:hover {
     transform: translateY(-3px);
+    border-color: #2a3a55;
 }
 
 /* TOP */
