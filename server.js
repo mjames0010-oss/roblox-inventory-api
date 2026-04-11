@@ -1,175 +1,44 @@
 const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-
-const app = express(); // ✅ THIS WAS MISSING
-const server = http.createServer(app);
-const io = new Server(server);
+const app = express();
 
 app.use(express.json());
 
-//--------------------------------------------------
-// DATA STORAGE
-//--------------------------------------------------
-let players = {};
+const SECRET = "mySuperSecret123";
 
-//--------------------------------------------------
-// ROBLOX ENDPOINT
-//--------------------------------------------------
-app.post("/player-join", (req, res) => {
-    const data = req.body;
+// store joins
+let joins = [];
 
-    players[data.userId] = {
-        ...data,
-        lastSeen: Date.now()
-    };
-
-    io.emit("playerUpdate", players[data.userId]);
-
-    res.json({ ok: true });
-});
-
-//--------------------------------------------------
-// DASHBOARD PAGE
-//--------------------------------------------------
 app.get("/", (req, res) => {
-    res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<title>Admin Panel</title>
-<style>
-body {
-    margin: 0;
-    font-family: Arial;
-    background: #0f0f0f;
-    color: white;
-    display: flex;
-}
+    res.send("Join Tracker API running!");
+});
 
-#sidebar {
-    width: 300px;
-    background: #161616;
-    height: 100vh;
-    overflow-y: auto;
-    border-right: 1px solid #333;
-}
+// ROBLOX sends join data here
+app.post("/player-join", (req, res) => {
+    const { userId, username, secret } = req.body;
 
-.player {
-    padding: 12px;
-    border-bottom: 1px solid #222;
-    cursor: pointer;
-}
+    if (secret !== SECRET) {
+        return res.status(403).send("Bad secret");
+    }
 
-.player:hover {
-    background: #222;
-}
+    if (!userId) return res.sendStatus(400);
 
-#main {
-    flex: 1;
-    padding: 20px;
-}
-
-.badge {
-    font-size: 12px;
-    background: #333;
-    padding: 3px 6px;
-    border-radius: 6px;
-}
-
-.item {
-    margin: 5px 0;
-    color: #ccc;
-}
-
-h2 {
-    color: #00ffcc;
-}
-</style>
-</head>
-<body>
-
-<div id="sidebar"></div>
-<div id="main">
-    <h2>👈 Select a player</h2>
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script>
-const socket = io();
-
-let players = {};
-let selected = null;
-
-const sidebar = document.getElementById("sidebar");
-const main = document.getElementById("main");
-
-function render() {
-    sidebar.innerHTML = "";
-
-    Object.values(players).forEach(p => {
-        const div = document.createElement("div");
-        div.className = "player";
-
-        div.innerHTML = "<b>" + p.username + "</b><br><span class='badge'>" + p.userId + "</span>";
-
-        div.onclick = () => show(p);
-
-        sidebar.appendChild(div);
+    joins.push({
+        userId,
+        username,
+        time: Date.now()
     });
-}
 
-function show(p) {
-    selected = p;
+    console.log("Player joined:", username, userId);
 
-    let inv = "";
-
-    for (const item of (p.ownedSkins || [])) {
-        if (item.owned) {
-            inv += "<div class='item'>📦 " + item.name + " x" + item.owned + "</div>";
-        } else if (item.serialItems) {
-            inv += "<div class='item'>💎 " + item.name + " (Serials: " + item.serialItems.length + ")</div>";
-        } else {
-            inv += "<div class='item'>📦 " + item.name + "</div>";
-        }
-    }
-
-    main.innerHTML =
-        "<h2>👤 " + p.username + "</h2>" +
-        "<p>Equipped: <b>" + p.equippedSkin + "</b></p>" +
-        "<p>Inventory Size: " + p.inventorySize + "</p>" +
-        "<h3>Inventory</h3>" +
-        inv;
-}
-
-socket.on("init", (data) => {
-    players = data;
-    render();
+    res.sendStatus(200);
 });
 
-socket.on("playerUpdate", (p) => {
-    players[p.userId] = p;
-    render();
-
-    if (selected && selected.userId === p.userId) {
-        show(p);
-    }
-});
-</script>
-
-</body>
-</html>
-    `);
+// view joins (browser test)
+app.get("/joins", (req, res) => {
+    res.json(joins);
 });
 
-//--------------------------------------------------
-// SOCKET.IO
-//--------------------------------------------------
-io.on("connection", (socket) => {
-    socket.emit("init", players);
-});
-
-//--------------------------------------------------
-server.listen(3000, () => {
-    console.log("🚀 Admin Panel running on port 3000");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log("Join Tracker running on port", PORT);
 });
