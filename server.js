@@ -3,77 +3,80 @@ const app = express();
 
 app.use(express.json());
 
-const SECRET = "mySuperSecret123";
+let logs = [];
 
-// memory storage
-let players = [];
-
-// HOME TEST
-app.get("/", (req, res) => {
-    res.send("✅ Roblox Inventory API Online");
-});
-
-// RECEIVE ROBLOX DATA
 app.post("/player-join", (req, res) => {
-    const {
-        userId,
-        username,
-        ownedSkins,
-        equippedSkin,
-        inventorySize,
-        secret
-    } = req.body;
+    logs.unshift(req.body);
 
-    // security check
-    if (secret !== SECRET) {
-        console.log("❌ Bad secret attempt");
-        return res.status(403).send("Bad secret");
-    }
+    if (logs.length > 20) logs.pop();
 
-    if (!userId || !username) {
-        return res.status(400).send("Missing data");
-    }
-
-    const playerData = {
-        userId,
-        username,
-        ownedSkins: ownedSkins || [],
-        equippedSkin: equippedSkin || "None",
-        inventorySize: inventorySize || 0,
-        time: new Date().toISOString()
-    };
-
-    players.push(playerData);
-
-    console.log("================================");
-    console.log("PLAYER:", username);
-    console.log("ID:", userId);
-    console.log("EQUIPPED:", equippedSkin);
-    console.log("COUNT:", inventorySize);
-    console.log("ITEMS:", ownedSkins);
-    console.log("================================");
-
-    res.sendStatus(200);
+    res.json({ ok: true });
 });
 
-// VIEW ALL DATA
-app.get("/players", (req, res) => {
-    res.json(players);
+app.get("/", (req, res) => {
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<title>Inventory API Dashboard</title>
+<style>
+body {
+    font-family: Arial;
+    background: #0f0f0f;
+    color: white;
+    margin: 0;
+    padding: 20px;
+}
+
+h1 {
+    text-align: center;
+    color: #00ffcc;
+}
+
+.card {
+    background: #1c1c1c;
+    padding: 15px;
+    margin: 10px 0;
+    border-radius: 12px;
+    border: 1px solid #333;
+}
+
+.user {
+    color: #00ffcc;
+    font-weight: bold;
+}
+
+.item {
+    margin-left: 10px;
+    color: #ccc;
+}
+
+.badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 8px;
+    background: #333;
+    margin-left: 5px;
+    font-size: 12px;
+}
+</style>
+</head>
+<body>
+
+<h1>🎮 Roblox Inventory Dashboard</h1>
+
+${logs.map(l => `
+<div class="card">
+    <div class="user">👤 ${l.username} <span class="badge">ID: ${l.userId}</span></div>
+    <div>🎒 Equipped: ${l.equippedSkin}</div>
+    <div>📦 Items:</div>
+    <pre class="item">${JSON.stringify(l.ownedSkins, null, 2)}</pre>
+</div>
+`).join("")}
+
+</body>
+</html>
+    `);
 });
 
-// VIEW SINGLE PLAYER
-app.get("/players/:id", (req, res) => {
-    const player = players.find(p => p.userId == req.params.id);
-
-    if (!player) {
-        return res.status(404).json({ error: "Not found" });
-    }
-
-    res.json(player);
-});
-
-// START
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log("🚀 API running on port", PORT);
-});
+app.listen(3000, () => console.log("API running"));
