@@ -4,39 +4,41 @@ const app = express();
 app.use(express.json());
 
 const SECRET = "mySuperSecret123";
-let inventories = {};
+
+// store joins
+let joins = [];
 
 app.get("/", (req, res) => {
-    res.send("Inventory API is running!");
+    res.send("Join Tracker API running!");
 });
 
-app.post("/update-inventory", (req, res) => {
-    const { userId, data, secret } = req.body;
+// ROBLOX sends join data here
+app.post("/player-join", (req, res) => {
+    const { userId, username, secret } = req.body;
 
     if (secret !== SECRET) {
-        return res.status(403).send("Invalid secret");
+        return res.status(403).send("Bad secret");
     }
 
     if (!userId) return res.sendStatus(400);
 
-    inventories[userId] = data;
+    joins.push({
+        userId,
+        username,
+        time: Date.now()
+    });
 
-    console.log("Updated inventory for:", userId);
+    console.log("Player joined:", username, userId);
 
     res.sendStatus(200);
 });
 
-app.get("/inventory/:userId", (req, res) => {
-    const userId = req.params.userId;
-
-    res.json(inventories[userId] || {
-        OwnedSkins: [],
-        EquippedSkin: null
-    });
+// view joins (browser test)
+app.get("/joins", (req, res) => {
+    res.json(joins);
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-    console.log("Inventory API running on port", PORT);
+    console.log("Join Tracker running on port", PORT);
 });
