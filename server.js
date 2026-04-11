@@ -1,10 +1,43 @@
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+
+const app = express(); // ✅ THIS WAS MISSING
+const server = http.createServer(app);
+const io = new Server(server);
+
+app.use(express.json());
+
+//--------------------------------------------------
+// DATA STORAGE
+//--------------------------------------------------
+let players = {};
+
+//--------------------------------------------------
+// ROBLOX ENDPOINT
+//--------------------------------------------------
+app.post("/player-join", (req, res) => {
+    const data = req.body;
+
+    players[data.userId] = {
+        ...data,
+        lastSeen: Date.now()
+    };
+
+    io.emit("playerUpdate", players[data.userId]);
+
+    res.json({ ok: true });
+});
+
+//--------------------------------------------------
+// DASHBOARD PAGE
+//--------------------------------------------------
 app.get("/", (req, res) => {
     res.send(`
 <!DOCTYPE html>
 <html>
 <head>
 <title>Admin Panel</title>
-
 <style>
 body {
     margin: 0;
@@ -53,12 +86,10 @@ h2 {
     color: #00ffcc;
 }
 </style>
-
 </head>
 <body>
 
 <div id="sidebar"></div>
-
 <div id="main">
     <h2>👈 Select a player</h2>
 </div>
@@ -129,4 +160,16 @@ socket.on("playerUpdate", (p) => {
 </body>
 </html>
     `);
+});
+
+//--------------------------------------------------
+// SOCKET.IO
+//--------------------------------------------------
+io.on("connection", (socket) => {
+    socket.emit("init", players);
+});
+
+//--------------------------------------------------
+server.listen(3000, () => {
+    console.log("🚀 Admin Panel running on port 3000");
 });
