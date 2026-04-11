@@ -3,22 +3,73 @@ const app = express();
 
 app.use(express.json());
 
+// ======================
+// CONFIG
+// ======================
 const SECRET = "mySuperSecret123";
 
-// memory storage (safe for Render)
-let players = [];
+// optional DB (safe fallback)
+let dbEnabled = false;
+let PlayerModel = null;
+
+try {
+    const mongoose = require("mongoose");
+
+    mongoose.connect(process.env.MONGO_URL || "")
+        .then(() => {
+            console.log("✅ MongoDB connected");
+            dbEnabled = true;
+        })
+        .catch(() => {
+            console.log("⚠️ MongoDB not connected, using memory mode");
+        });
+
+    const PlayerSchema = new mongoose.Schema({
+        userId: String,
+        username: String,
+        ownedSkins: Array,
+        equippedSkin: String,
+        inventorySize: Number,
+        time: String
+    });
+
+    PlayerModel = mongoose.model("Player", PlayerSchema);
+
+} catch (e) {
+    console.log("⚠️ MongoDB disabled");
+}
+
+// ======================
+// MEMORY FALLBACK DB
+// ======================
+let memoryPlayers = [];
+
+// ======================
+// RARITY SYSTEM
+// ======================
+function getRarityColor(item) {
+    const mythic = ["Dragon Blade", "Void Knife"];
+    const legendary = ["Ice Blade", "Fire Katana"];
+    const rare = ["Shadow Knife"];
+
+    if (mythic.includes(item)) return "#ff4df0";
+    if (legendary.includes(item)) return "#ffb84d";
+    if (rare.includes(item)) return "#4da6ff";
+    return "#9ecbff";
+}
 
 // ======================
 // HOME
 // ======================
 app.get("/", (req, res) => {
-    res.send("✅ Roblox Inventory API Online (STABLE VERSION)");
+    res.send("✅ Big Games Style API Online (PRO VERSION)");
 });
 
 // ======================
-// RECEIVE DATA
+// PLAYER JOIN
 // ======================
-app.post("/player-join", (req, res) => {
+app.post("/player-join", async (req, res) => {
+
     const {
         userId,
         username,
@@ -28,17 +79,8 @@ app.post("/player-join", (req, res) => {
         secret
     } = req.body;
 
-    if (secret !== SECRET) {
-        console.log("❌ Bad secret attempt");
-        return res.status(403).send("Bad secret");
-    }
-
-    if (!userId || !username) {
-        return res.status(400).send("Missing data");
-    }
-
-    // prevent duplicates (important fix)
-    const existingIndex = players.findIndex(p => String(p.userId) === String(userId));
+    if (secret !== SECRET) return res.status(403).send("Bad secret");
+    if (!userId || !username) return res.status(400).send("Missing data");
 
     const playerData = {
         userId,
@@ -49,10 +91,19 @@ app.post("/player-join", (req, res) => {
         time: new Date().toISOString()
     };
 
-    if (existingIndex !== -1) {
-        players[existingIndex] = playerData;
-    } else {
-        players.push(playerData);
+    // DB MODE
+    if (dbEnabled && PlayerModel) {
+        await PlayerModel.findOneAndUpdate(
+            { userId },
+            playerData,
+            { upsert: true }
+        );
+    } 
+    // MEMORY MODE
+    else {
+        const index = memoryPlayers.findIndex(p => p.userId === userId);
+        if (index !== -1) memoryPlayers[index] = playerData;
+        else memoryPlayers.push(playerData);
     }
 
     console.log("PLAYER:", username);
@@ -61,29 +112,45 @@ app.post("/player-join", (req, res) => {
 });
 
 // ======================
-// API ALL PLAYERS
+// GET PLAYERS
 // ======================
-app.get("/players", (req, res) => {
-    res.json(players);
+app.get("/players", async (req, res) => {
+    if (dbEnabled && PlayerModel) {
+        return res.json(await PlayerModel.find());
+    }
+    res.json(memoryPlayers);
 });
 
 // ======================
-// API SINGLE PLAYER
+// SINGLE PLAYER
 // ======================
-app.get("/players/:id", (req, res) => {
-    const player = players.find(p => String(p.userId) === String(req.params.id));
+app.get("/players/:id", async (req, res) => {
 
-    if (!player) {
-        return res.status(404).json({ error: "Not found" });
+    let player;
+
+    if (dbEnabled && PlayerModel) {
+        player = await PlayerModel.findOne({ userId: req.params.id });
+    } else {
+        player = memoryPlayers.find(p => p.userId == req.params.id);
     }
+
+    if (!player) return res.status(404).json({ error: "Not found" });
 
     res.json(player);
 });
 
 // ======================
-// DASHBOARD (BIG GAMES STYLE + HEADSHOTS)
+// BIG GAMES STYLE DASHBOARD
 // ======================
-app.get("/dashboard", (req, res) => {
+app.get("/dashboard", async (req, res) => {
+
+    let players = [];
+
+    if (dbEnabled && PlayerModel) {
+        players = await PlayerModel.find();
+    } else {
+        players = memoryPlayers;
+    }
 
     const cards = players.map(p => {
 
@@ -109,7 +176,7 @@ app.get("/dashboard", (req, res) => {
             </div>
 
             <div class="knives">
-                ${skins.map(k => `<div class="tag">${k}</div>`).join("")}
+                ${skins.map(k => `<div class="tag" style="color:${getRarityColor(k)}">${k}</div>`).join("")}
             </div>
 
             <div class="time">
@@ -124,7 +191,7 @@ app.get("/dashboard", (req, res) => {
 <!DOCTYPE html>
 <html>
 <head>
-<title>Player Dashboard</title>
+<title>Big Games Dashboard PRO</title>
 
 <style>
 body {
@@ -152,7 +219,6 @@ body {
     gap: 15px;
 }
 
-/* CARD */
 .card {
     background: #121826;
     border: 1px solid #1e2635;
@@ -162,19 +228,16 @@ body {
 }
 
 .card:hover {
-    transform: translateY(-3px);
+    transform: translateY(-4px);
     border-color: #2a3a55;
 }
 
-/* TOP */
 .top {
     display: flex;
-    align-items: center;
     gap: 10px;
-    margin-bottom: 10px;
+    align-items: center;
 }
 
-/* AVATAR */
 .avatar {
     width: 45px;
     height: 45px;
@@ -182,10 +245,8 @@ body {
     border: 1px solid #2a3550;
 }
 
-/* TEXT */
 .name {
     font-weight: bold;
-    font-size: 15px;
 }
 
 .id {
@@ -193,7 +254,6 @@ body {
     color: #7d8aa5;
 }
 
-/* STATS */
 .stats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -209,7 +269,6 @@ body {
 }
 
 .stats span {
-    display: block;
     font-size: 10px;
     color: #7d8aa5;
 }
@@ -218,7 +277,6 @@ body {
     font-size: 13px;
 }
 
-/* KNIVES */
 .knives {
     display: flex;
     flex-wrap: wrap;
@@ -230,10 +288,8 @@ body {
     padding: 4px 8px;
     background: #1a2440;
     border-radius: 6px;
-    color: #9ecbff;
 }
 
-/* TIME */
 .time {
     margin-top: 10px;
     font-size: 10px;
@@ -246,12 +302,12 @@ body {
 <body>
 
 <div class="header">
-    ⚔ Player Dashboard (Stable Build)
+⚔ Big Games Style Inventory System (PRO)
 </div>
 
 <div class="wrap">
     <div class="grid">
-        ${cards || "<p>No players yet</p>"}
+        ${cards || "<p>No players online</p>"}
     </div>
 </div>
 
@@ -261,10 +317,10 @@ body {
 });
 
 // ======================
-// START SERVER (IMPORTANT FOR RENDER)
+// START SERVER
 // ======================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("🚀 SERVER RUNNING ON PORT", PORT);
+    console.log("🚀 PRO SERVER RUNNING ON PORT", PORT);
 });
