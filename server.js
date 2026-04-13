@@ -20,31 +20,35 @@ function isSpam(userId) {
 }
 
 // ======================
+// FORMAT DUPLICATES (IMPORTANT FIX)
+// ======================
+function formatItems(items) {
+    const countMap = {};
+
+    for (const item of items || []) {
+        countMap[item] = (countMap[item] || 0) + 1;
+    }
+
+    return Object.entries(countMap).map(([name, count]) => {
+        return count > 1 ? `${name} x${count}` : name;
+    });
+}
+
+// ======================
 // HOME
 // ======================
 app.get("/", (req, res) => {
-    res.send("✅ Inventory API Online (LIVE SYNC ENABLED)");
+    res.send("✅ Inventory API Online (FIXED + STACKED ITEMS)");
 });
 
 // ======================
-// PLAYER JOIN / INIT
+// PLAYER JOIN
 // ======================
 app.post("/player-join", (req, res) => {
-    const {
-        userId,
-        username,
-        ownedSkins,
-        equippedSkin,
-        cases
-    } = req.body;
+    const { userId, username, ownedSkins, equippedSkin, cases } = req.body;
 
-    if (!userId || !username) {
-        return res.status(400).send("Missing data");
-    }
-
-    if (isSpam(userId)) {
-        return res.status(429).send("Too many requests");
-    }
+    if (!userId || !username) return res.status(400).send("Missing data");
+    if (isSpam(userId)) return res.status(429).send("Too many requests");
 
     const safeData = {
         userId: String(userId),
@@ -69,20 +73,12 @@ app.post("/player-join", (req, res) => {
 });
 
 // ======================
-// 🔥 LIVE UPDATE (IMPORTANT)
+// PLAYER UPDATE (FIXED)
 // ======================
 app.post("/player-update", (req, res) => {
-    const {
-        userId,
-        username,
-        ownedSkins,
-        equippedSkin,
-        cases
-    } = req.body;
+    const { userId, username, ownedSkins, equippedSkin, cases } = req.body;
 
-    if (!userId) {
-        return res.status(400).send("Missing userId");
-    }
+    if (!userId) return res.status(400).send("Missing userId");
 
     const safeData = {
         userId: String(userId),
@@ -98,11 +94,8 @@ app.post("/player-update", (req, res) => {
 
     const index = memoryPlayers.findIndex(p => p.userId === safeData.userId);
 
-    if (index !== -1) {
-        memoryPlayers[index] = safeData;
-    } else {
-        memoryPlayers.push(safeData);
-    }
+    if (index !== -1) memoryPlayers[index] = safeData;
+    else memoryPlayers.push(safeData);
 
     console.log("🔄 UPDATE:", safeData.username);
 
@@ -128,7 +121,7 @@ app.get("/players/:id", (req, res) => {
 });
 
 // ======================
-// DASHBOARD
+// DASHBOARD (FIXED STACKING DISPLAY)
 // ======================
 app.get("/dashboard", (req, res) => {
 
@@ -142,6 +135,8 @@ app.get("/dashboard", (req, res) => {
             caseCount += Number(cases[k]) || 0;
         }
 
+        const formattedSkins = formatItems(skins);
+
         return `
         <div class="card">
             <div class="top">
@@ -153,7 +148,7 @@ app.get("/dashboard", (req, res) => {
             </div>
 
             <div class="stats">
-                <div>Skins: ${skins.length}</div>
+                <div>Skins: ${formattedSkins.join(", ") || "None"}</div>
                 <div>Cases: ${caseCount}</div>
                 <div>Equipped: ${p.equippedSkin}</div>
             </div>
@@ -169,7 +164,7 @@ body { margin:0; font-family:Arial; background:#0b0f1a; color:white; }
 .card { background:#121a2a; margin:10px; padding:10px; border-radius:10px; }
 .top { display:flex; gap:10px; align-items:center; }
 img { width:50px; border-radius:8px; }
-.stats { display:flex; justify-content:space-between; margin-top:10px; }
+.stats { display:flex; flex-direction:column; gap:5px; margin-top:10px; }
 </style>
 </head>
 <body>
