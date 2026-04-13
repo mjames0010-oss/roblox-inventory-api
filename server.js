@@ -10,34 +10,48 @@ const io = new Server(server);
 app.use(express.json());
 
 // ======================
-// DATABASE
-// ======================
-mongoose.connect(process.env.MONGO_URL);
-
-const PlayerSchema = new mongoose.Schema({
-    userId: String,
-    username: String,
-    ownedSkins: Array,
-    equippedSkin: String,
-    cases: Object
-});
-
-const PlayerModel = mongoose.model("Player", PlayerSchema);
-
-// ======================
-// MEMORY CACHE
+// MEMORY FALLBACK DB
 // ======================
 let memoryPlayers = [];
 
 // ======================
-// LOAD DB ON START
+// MONGO SAFE CONNECT
 // ======================
-async function loadPlayers() {
-    const data = await PlayerModel.find({});
-    memoryPlayers = data.map(p => p.toObject());
-    console.log("📦 Loaded players:", memoryPlayers.length);
+const mongoURI = process.env.MONGO_URL;
+
+let mongoEnabled = false;
+let PlayerModel = null;
+
+async function connectDB() {
+    if (!mongoURI) {
+        console.warn("⚠️ MONGO_URL missing — running in MEMORY MODE");
+        return;
+    }
+
+    try {
+        await mongoose.connect(mongoURI);
+        mongoEnabled = true;
+
+        const PlayerSchema = new mongoose.Schema({
+            userId: String,
+            username: String,
+            ownedSkins: Array,
+            equippedSkin: String,
+            cases: Object
+        });
+
+        PlayerModel = mongoose.model("Player", PlayerSchema);
+
+        const data = await PlayerModel.find({});
+        memoryPlayers = data.map(d => d.toObject());
+
+        console.log("📦 MongoDB connected + loaded players:", memoryPlayers.length);
+    } catch (err) {
+        console.error("❌ MongoDB failed:", err);
+    }
 }
-loadPlayers();
+
+connectDB();
 
 // ======================
 // REAL-TIME SOCKETS
@@ -51,45 +65,47 @@ function broadcast() {
 }
 
 // ======================
-// FORMAT STACKED ITEMS
+// STACK ITEMS
 // ======================
 function formatItems(items = []) {
     const map = {};
-
-    for (const item of items) {
-        map[item] = (map[item] || 0) + 1;
+    for (const i of items) {
+        map[i] = (map[i] || 0) + 1;
     }
-
-    return Object.entries(map).map(([name, count]) =>
-        count > 1 ? `${name} x${count}` : name
+    return Object.entries(map).map(([k, v]) =>
+        v > 1 ? `${k} x${v}` : k
     );
 }
 
 // ======================
-// GET ALL PLAYERS
+// SAVE HELPER
 // ======================
-app.get("/players", (req, res) => {
-    res.json(memoryPlayers);
-});
+async function savePlayer(player) {
+    if (!mongoEnabled || !PlayerModel) return;
+
+    await PlayerModel.findOneAndUpdate(
+        { userId: player.userId },
+        player,
+        { upsert: true }
+    );
+}
 
 // ======================
 // GET PLAYER
 // ======================
-app.get("/players/:id", (req, res) => {
-    const player = memoryPlayers.find(p => p.userId === req.params.id);
-    if (!player) return res.status(404).json({ error: "Not found" });
-    res.json(player);
-});
+function getPlayer(userId) {
+    return memoryPlayers.find(p => p.userId === String(userId));
+}
 
 // ======================
-// JOIN (INITIAL SAVE)
+// JOIN
 // ======================
 app.post("/player-join", async (req, res) => {
     const { userId, username } = req.body;
 
     if (!userId || !username) return res.status(400).send("Missing data");
 
-    let player = memoryPlayers.find(p => p.userId === String(userId));
+    let player = getPlayer(userId);
 
     if (!player) {
         player = {
@@ -103,59 +119,52 @@ app.post("/player-join", async (req, res) => {
         memoryPlayers.push(player);
     }
 
-    await PlayerModel.findOneAndUpdate(
-        { userId: player.userId },
-        player,
-        { upsert: true }
-    );
-
+    await savePlayer(player);
     broadcast();
 
     res.json({ ok: true });
 });
 
 // ======================
-// 🔐 SERVER-AUTHORIZED SKIN ADD
+// ADD SKIN (SECURE)
 // ======================
 app.post("/add-skin", async (req, res) => {
     const { userId, skin } = req.body;
 
-    const player = memoryPlayers.find(p => p.userId === String(userId));
+    const player = getPlayer(userId);
     if (!player) return res.status(404).send("Not found");
 
     player.ownedSkins.push(skin);
 
-    await PlayerModel.findOneAndUpdate(
-        { userId: player.userId },
-        player,
-        { upsert: true }
-    );
-
+    await savePlayer(player);
     broadcast();
 
     res.json({ ok: true });
 });
 
 // ======================
-// 🔐 SERVER-AUTHORIZED CASE UPDATE
+// ADD CASE (SECURE)
 // ======================
 app.post("/add-case", async (req, res) => {
     const { userId, caseName, amount } = req.body;
 
-    const player = memoryPlayers.find(p => p.userId === String(userId));
+    const player = getPlayer(userId);
     if (!player) return res.status(404).send("Not found");
 
-    player.cases[caseName] = (player.cases[caseName] || 0) + (amount || 1);
+    player.cases[caseName] =
+        (player.cases[caseName] || 0) + (amount || 1);
 
-    await PlayerModel.findOneAndUpdate(
-        { userId: player.userId },
-        player,
-        { upsert: true }
-    );
-
+    await savePlayer(player);
     broadcast();
 
     res.json({ ok: true });
+});
+
+// ======================
+// PLAYERS
+// ======================
+app.get("/players", (req, res) => {
+    res.json(memoryPlayers);
 });
 
 // ======================
@@ -195,12 +204,13 @@ function render(players) {
 socket.on("init", render);
 socket.on("update", render);
 </script>
+
 </body>
 </html>
     `);
 });
 
 // ======================
-server.listen(3000, () => {
-    console.log("🚀 Server running on port 3000");
+server.listen(process.env.PORT || 3000, () => {
+    console.log("🚀 Server running");
 });
