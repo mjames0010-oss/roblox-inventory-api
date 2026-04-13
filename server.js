@@ -1,181 +1,206 @@
 const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const mongoose = require("mongoose");
+
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
 app.use(express.json());
 
 // ======================
-// MEMORY DB
+// DATABASE
+// ======================
+mongoose.connect(process.env.MONGO_URL);
+
+const PlayerSchema = new mongoose.Schema({
+    userId: String,
+    username: String,
+    ownedSkins: Array,
+    equippedSkin: String,
+    cases: Object
+});
+
+const PlayerModel = mongoose.model("Player", PlayerSchema);
+
+// ======================
+// MEMORY CACHE
 // ======================
 let memoryPlayers = [];
 
-const lastRequest = new Map();
+// ======================
+// LOAD DB ON START
+// ======================
+async function loadPlayers() {
+    const data = await PlayerModel.find({});
+    memoryPlayers = data.map(p => p.toObject());
+    console.log("📦 Loaded players:", memoryPlayers.length);
+}
+loadPlayers();
 
-function isSpam(userId) {
-    const now = Date.now();
-    const last = lastRequest.get(userId) || 0;
+// ======================
+// REAL-TIME SOCKETS
+// ======================
+io.on("connection", (socket) => {
+    socket.emit("init", memoryPlayers);
+});
 
-    if (now - last < 1000) return true;
-    lastRequest.set(userId, now);
-    return false;
+function broadcast() {
+    io.emit("update", memoryPlayers);
 }
 
 // ======================
-// FORMAT DUPLICATES (IMPORTANT FIX)
+// FORMAT STACKED ITEMS
 // ======================
-function formatItems(items) {
-    const countMap = {};
+function formatItems(items = []) {
+    const map = {};
 
-    for (const item of items || []) {
-        countMap[item] = (countMap[item] || 0) + 1;
+    for (const item of items) {
+        map[item] = (map[item] || 0) + 1;
     }
 
-    return Object.entries(countMap).map(([name, count]) => {
-        return count > 1 ? `${name} x${count}` : name;
-    });
+    return Object.entries(map).map(([name, count]) =>
+        count > 1 ? `${name} x${count}` : name
+    );
 }
 
 // ======================
-// HOME
-// ======================
-app.get("/", (req, res) => {
-    res.send("✅ Inventory API Online (FIXED + STACKED ITEMS)");
-});
-
-// ======================
-// PLAYER JOIN
-// ======================
-app.post("/player-join", (req, res) => {
-    const { userId, username, ownedSkins, equippedSkin, cases } = req.body;
-
-    if (!userId || !username) return res.status(400).send("Missing data");
-    if (isSpam(userId)) return res.status(429).send("Too many requests");
-
-    const safeData = {
-        userId: String(userId),
-        username: String(username),
-
-        ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
-        equippedSkin: typeof equippedSkin === "string" ? equippedSkin : "Knife",
-
-        cases: typeof cases === "object" ? cases : {},
-
-        time: new Date().toISOString()
-    };
-
-    const index = memoryPlayers.findIndex(p => p.userId === safeData.userId);
-
-    if (index !== -1) memoryPlayers[index] = safeData;
-    else memoryPlayers.push(safeData);
-
-    console.log("📥 JOIN:", username);
-
-    res.json({ ok: true });
-});
-
-// ======================
-// PLAYER UPDATE (FIXED)
-// ======================
-app.post("/player-update", (req, res) => {
-    const { userId, username, ownedSkins, equippedSkin, cases } = req.body;
-
-    if (!userId) return res.status(400).send("Missing userId");
-
-    const safeData = {
-        userId: String(userId),
-        username: String(username || "Unknown"),
-
-        ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
-        equippedSkin: typeof equippedSkin === "string" ? equippedSkin : "Knife",
-
-        cases: typeof cases === "object" ? cases : {},
-
-        time: new Date().toISOString()
-    };
-
-    const index = memoryPlayers.findIndex(p => p.userId === safeData.userId);
-
-    if (index !== -1) memoryPlayers[index] = safeData;
-    else memoryPlayers.push(safeData);
-
-    console.log("🔄 UPDATE:", safeData.username);
-
-    res.json({ ok: true });
-});
-
-// ======================
-// PLAYERS
+// GET ALL PLAYERS
 // ======================
 app.get("/players", (req, res) => {
     res.json(memoryPlayers);
 });
 
 // ======================
-// SINGLE PLAYER
+// GET PLAYER
 // ======================
 app.get("/players/:id", (req, res) => {
     const player = memoryPlayers.find(p => p.userId === req.params.id);
-
     if (!player) return res.status(404).json({ error: "Not found" });
-
     res.json(player);
 });
 
 // ======================
-// DASHBOARD (FIXED STACKING DISPLAY)
+// JOIN (INITIAL SAVE)
+// ======================
+app.post("/player-join", async (req, res) => {
+    const { userId, username } = req.body;
+
+    if (!userId || !username) return res.status(400).send("Missing data");
+
+    let player = memoryPlayers.find(p => p.userId === String(userId));
+
+    if (!player) {
+        player = {
+            userId: String(userId),
+            username,
+            ownedSkins: [],
+            equippedSkin: "Knife",
+            cases: {}
+        };
+
+        memoryPlayers.push(player);
+    }
+
+    await PlayerModel.findOneAndUpdate(
+        { userId: player.userId },
+        player,
+        { upsert: true }
+    );
+
+    broadcast();
+
+    res.json({ ok: true });
+});
+
+// ======================
+// 🔐 SERVER-AUTHORIZED SKIN ADD
+// ======================
+app.post("/add-skin", async (req, res) => {
+    const { userId, skin } = req.body;
+
+    const player = memoryPlayers.find(p => p.userId === String(userId));
+    if (!player) return res.status(404).send("Not found");
+
+    player.ownedSkins.push(skin);
+
+    await PlayerModel.findOneAndUpdate(
+        { userId: player.userId },
+        player,
+        { upsert: true }
+    );
+
+    broadcast();
+
+    res.json({ ok: true });
+});
+
+// ======================
+// 🔐 SERVER-AUTHORIZED CASE UPDATE
+// ======================
+app.post("/add-case", async (req, res) => {
+    const { userId, caseName, amount } = req.body;
+
+    const player = memoryPlayers.find(p => p.userId === String(userId));
+    if (!player) return res.status(404).send("Not found");
+
+    player.cases[caseName] = (player.cases[caseName] || 0) + (amount || 1);
+
+    await PlayerModel.findOneAndUpdate(
+        { userId: player.userId },
+        player,
+        { upsert: true }
+    );
+
+    broadcast();
+
+    res.json({ ok: true });
+});
+
+// ======================
+// DASHBOARD (LIVE)
 // ======================
 app.get("/dashboard", (req, res) => {
-
-    const cards = memoryPlayers.map(p => {
-
-        const skins = Array.isArray(p.ownedSkins) ? p.ownedSkins : [];
-        const cases = p.cases || {};
-
-        let caseCount = 0;
-        for (let k in cases) {
-            caseCount += Number(cases[k]) || 0;
-        }
-
-        const formattedSkins = formatItems(skins);
-
-        return `
-        <div class="card">
-            <div class="top">
-                <img src="https://www.roblox.com/headshot-thumbnail/image?userId=${p.userId}&width=420&height=420&format=png" />
-                <div>
-                    <b>${p.username}</b><br>
-                    <small>${p.userId}</small>
-                </div>
-            </div>
-
-            <div class="stats">
-                <div>Skins: ${formattedSkins.join(", ") || "None"}</div>
-                <div>Cases: ${caseCount}</div>
-                <div>Equipped: ${p.equippedSkin}</div>
-            </div>
-        </div>
-        `;
-    }).join("");
-
     res.send(`
 <html>
 <head>
+<script src="/socket.io/socket.io.js"></script>
 <style>
-body { margin:0; font-family:Arial; background:#0b0f1a; color:white; }
+body { background:#0b0f1a; color:white; font-family:Arial; }
 .card { background:#121a2a; margin:10px; padding:10px; border-radius:10px; }
-.top { display:flex; gap:10px; align-items:center; }
-img { width:50px; border-radius:8px; }
-.stats { display:flex; flex-direction:column; gap:5px; margin-top:10px; }
 </style>
 </head>
 <body>
-<h2 style="padding:10px;">LIVE Dashboard</h2>
-<div>${cards}</div>
+<h2>🔥 LIVE DASHBOARD</h2>
+<div id="list"></div>
+
+<script>
+const socket = io();
+const list = document.getElementById("list");
+
+function render(players) {
+    list.innerHTML = players.map(p => {
+        const skins = (p.ownedSkins || []).join(", ");
+        return \`
+        <div class="card">
+            <b>\${p.username}</b><br>
+            Skins: \${skins || "None"}<br>
+            Equipped: \${p.equippedSkin}
+        </div>
+        \`;
+    }).join("");
+}
+
+socket.on("init", render);
+socket.on("update", render);
+</script>
 </body>
 </html>
     `);
 });
 
 // ======================
-app.listen(3000, () => {
-    console.log("🚀 API running on port 3000");
+server.listen(3000, () => {
+    console.log("🚀 Server running on port 3000");
 });
