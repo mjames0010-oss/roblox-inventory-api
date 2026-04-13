@@ -6,7 +6,7 @@ app.use(express.json());
 // ======================
 // CONFIG
 // ======================
-const SECRET = "mySuperSecret123";
+const API_VERSION = "1.0";
 
 // ======================
 // MONGO (optional)
@@ -32,10 +32,7 @@ try {
         ownedSkins: Array,
         equippedSkin: String,
         inventorySize: Number,
-
-        // ✅ CASES ADDED
         cases: Object,
-
         time: String
     });
 
@@ -51,30 +48,33 @@ try {
 let memoryPlayers = [];
 
 // ======================
-// RARITY SYSTEM
+// VALIDATION
 // ======================
-function getRarityColor(item) {
-    const mythic = ["Dragon Blade", "Void Knife"];
-    const legendary = ["Ice Blade", "Fire Katana"];
-    const rare = ["Shadow Knife"];
-
-    if (mythic.includes(item)) return "#ff4df0";
-    if (legendary.includes(item)) return "#ffb84d";
-    if (rare.includes(item)) return "#4da6ff";
-    return "#9ecbff";
+function isValidPayload(body) {
+    return (
+        body &&
+        typeof body.userId !== "undefined" &&
+        typeof body.username === "string"
+    );
 }
 
 // ======================
 // HOME
 // ======================
 app.get("/", (req, res) => {
-    res.send("✅ Big Games Style API Online (PRO VERSION)");
+    res.send("✅ Big Games Style API Online (SECURE VERSION)");
 });
 
 // ======================
-// PLAYER JOIN
+// PLAYER JOIN (SECURE)
 // ======================
 app.post("/player-join", async (req, res) => {
+
+    const body = req.body;
+
+    if (!isValidPayload(body)) {
+        return res.status(400).send("Invalid payload");
+    }
 
     const {
         userId,
@@ -82,44 +82,39 @@ app.post("/player-join", async (req, res) => {
         ownedSkins,
         equippedSkin,
         inventorySize,
-        cases,        // ✅ FIXED
-        secret
-    } = req.body;
-
-    if (secret !== SECRET) return res.status(403).send("Bad secret");
-    if (!userId || !username) return res.status(400).send("Missing data");
+        cases
+    } = body;
 
     const playerData = {
-        userId,
-        username,
-        ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
-        equippedSkin: equippedSkin || "None",
-        inventorySize: inventorySize || 0,
+        userId: String(userId),
+        username: String(username),
 
-        // ✅ SAFE CASE STORAGE
+        ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
+        equippedSkin: typeof equippedSkin === "string" ? equippedSkin : "None",
+        inventorySize: typeof inventorySize === "number" ? inventorySize : 0,
+
         cases: cases && typeof cases === "object" ? cases : {},
 
         time: new Date().toISOString()
     };
 
-    // DB MODE
+    // SAVE
     if (dbEnabled && PlayerModel) {
         await PlayerModel.findOneAndUpdate(
-            { userId },
+            { userId: playerData.userId },
             playerData,
             { upsert: true }
         );
-    } 
-    // MEMORY MODE
-    else {
-        const index = memoryPlayers.findIndex(p => p.userId === userId);
+    } else {
+        const index = memoryPlayers.findIndex(p => p.userId === playerData.userId);
+
         if (index !== -1) memoryPlayers[index] = playerData;
         else memoryPlayers.push(playerData);
     }
 
-    console.log("PLAYER:", username, "| cases:", playerData.cases);
+    console.log("📥 PLAYER:", username);
 
-    res.sendStatus(200);
+    res.json({ ok: true, version: API_VERSION });
 });
 
 // ======================
@@ -142,7 +137,7 @@ app.get("/players/:id", async (req, res) => {
     if (dbEnabled && PlayerModel) {
         player = await PlayerModel.findOne({ userId: req.params.id });
     } else {
-        player = memoryPlayers.find(p => p.userId == req.params.id);
+        player = memoryPlayers.find(p => p.userId === req.params.id);
     }
 
     if (!player) return res.status(404).json({ error: "Not found" });
@@ -155,13 +150,9 @@ app.get("/players/:id", async (req, res) => {
 // ======================
 app.get("/dashboard", async (req, res) => {
 
-    let players = [];
-
-    if (dbEnabled && PlayerModel) {
-        players = await PlayerModel.find();
-    } else {
-        players = memoryPlayers;
-    }
+    let players = dbEnabled && PlayerModel
+        ? await PlayerModel.find()
+        : memoryPlayers;
 
     const cards = players.map(p => {
 
@@ -171,7 +162,9 @@ app.get("/dashboard", async (req, res) => {
         const cases = p.cases || {};
 
         let caseCount = 0;
-        for (let k in cases) caseCount += cases[k];
+        for (let k in cases) {
+            caseCount += Number(cases[k]) || 0;
+        }
 
         return `
         <div class="card">
@@ -191,15 +184,13 @@ app.get("/dashboard", async (req, res) => {
             </div>
 
             <div class="knives">
-                ${skins.map(k => `<div class="tag" style="color:${getRarityColor(k)}">${k}</div>`).join("")}
+                ${skins.map(k => `<div class="tag">${k}</div>`).join("")}
             </div>
 
             <div class="cases">
-                ${Object.keys(cases).map(c => `<div class="tag">🎁 ${c}: ${cases[c]}</div>`).join("")}
-            </div>
-
-            <div class="time">
-                ${new Date(p.time).toLocaleString()}
+                ${Object.keys(cases).map(c =>
+            `<div class="tag">🎁 ${c}: ${cases[c]}</div>`
+        ).join("")}
             </div>
 
         </div>
@@ -210,99 +201,25 @@ app.get("/dashboard", async (req, res) => {
 <!DOCTYPE html>
 <html>
 <head>
-<title>Big Games Dashboard PRO</title>
-
+<title>Dashboard</title>
 <style>
-body {
-    margin: 0;
-    font-family: Arial;
-    background: #0a0c10;
-    color: white;
-}
-
-.header {
-    padding: 18px 25px;
-    background: #111522;
-    border-bottom: 1px solid #1f2633;
-    font-size: 18px;
-    font-weight: bold;
-}
-
-.wrap { padding: 25px; }
-
-.grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 15px;
-}
-
-.card {
-    background: #121826;
-    border: 1px solid #1e2635;
-    border-radius: 12px;
-    padding: 15px;
-}
-
-.top {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-}
-
-.avatar {
-    width: 45px;
-    height: 45px;
-    border-radius: 10px;
-}
-
-.stats {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin: 10px 0;
-}
-
-.stats div {
-    background: #0e1422;
-    padding: 8px;
-    border-radius: 8px;
-    text-align: center;
-}
-
-.knives, .cases {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-}
-
-.tag {
-    font-size: 11px;
-    padding: 4px 8px;
-    background: #1a2440;
-    border-radius: 6px;
-}
-
-.time {
-    margin-top: 10px;
-    font-size: 10px;
-    color: #6d7b95;
-}
+body { margin:0; font-family:Arial; background:#0a0c10; color:white; }
+.header { padding:15px; background:#111; }
+.wrap { padding:20px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; }
+.card { background:#121826; padding:15px; border-radius:10px; }
+.top { display:flex; gap:10px; align-items:center; }
+.avatar { width:45px; border-radius:8px; }
+.stats { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin:10px 0; }
+.stats div { background:#0e1422; padding:5px; border-radius:6px; text-align:center; }
+.tag { font-size:11px; padding:4px 6px; background:#1a2440; border-radius:6px; display:inline-block; margin:2px; }
 </style>
-
 </head>
-
 <body>
-
-<div class="header">
-⚔ Big Games Style Inventory System (PRO)
-</div>
-
+<div class="header">PRO DASHBOARD</div>
 <div class="wrap">
-    <div class="grid">
-        ${cards || "<p>No players online</p>"}
-    </div>
+<div class="grid">${cards}</div>
 </div>
-
 </body>
 </html>
     `);
@@ -311,7 +228,6 @@ body {
 // ======================
 // START
 // ======================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log("🚀 SERVER RUNNING ON PORT", PORT);
+app.listen(process.env.PORT || 3000, () => {
+    console.log("🚀 SERVER RUNNING");
 });
