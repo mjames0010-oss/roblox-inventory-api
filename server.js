@@ -8,15 +8,13 @@ app.use(express.json());
 // ======================
 let memoryPlayers = [];
 
-// simple anti-spam
 const lastRequest = new Map();
 
 function isSpam(userId) {
     const now = Date.now();
     const last = lastRequest.get(userId) || 0;
 
-    if (now - last < 1500) return true;
-
+    if (now - last < 1000) return true;
     lastRequest.set(userId, now);
     return false;
 }
@@ -25,11 +23,11 @@ function isSpam(userId) {
 // HOME
 // ======================
 app.get("/", (req, res) => {
-    res.send("✅ Inventory API Online (CLEAN VERSION)");
+    res.send("✅ Inventory API Online (LIVE SYNC ENABLED)");
 });
 
 // ======================
-// PLAYER JOIN
+// PLAYER JOIN / INIT
 // ======================
 app.post("/player-join", (req, res) => {
     const {
@@ -40,7 +38,6 @@ app.post("/player-join", (req, res) => {
         cases
     } = req.body;
 
-    // VALIDATION
     if (!userId || !username) {
         return res.status(400).send("Missing data");
     }
@@ -56,7 +53,7 @@ app.post("/player-join", (req, res) => {
         ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
         equippedSkin: typeof equippedSkin === "string" ? equippedSkin : "Knife",
 
-        cases: (cases && typeof cases === "object") ? cases : {},
+        cases: typeof cases === "object" ? cases : {},
 
         time: new Date().toISOString()
     };
@@ -66,7 +63,48 @@ app.post("/player-join", (req, res) => {
     if (index !== -1) memoryPlayers[index] = safeData;
     else memoryPlayers.push(safeData);
 
-    console.log("📥 PLAYER:", username);
+    console.log("📥 JOIN:", username);
+
+    res.json({ ok: true });
+});
+
+// ======================
+// 🔥 LIVE UPDATE (IMPORTANT)
+// ======================
+app.post("/player-update", (req, res) => {
+    const {
+        userId,
+        username,
+        ownedSkins,
+        equippedSkin,
+        cases
+    } = req.body;
+
+    if (!userId) {
+        return res.status(400).send("Missing userId");
+    }
+
+    const safeData = {
+        userId: String(userId),
+        username: String(username || "Unknown"),
+
+        ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
+        equippedSkin: typeof equippedSkin === "string" ? equippedSkin : "Knife",
+
+        cases: typeof cases === "object" ? cases : {},
+
+        time: new Date().toISOString()
+    };
+
+    const index = memoryPlayers.findIndex(p => p.userId === safeData.userId);
+
+    if (index !== -1) {
+        memoryPlayers[index] = safeData;
+    } else {
+        memoryPlayers.push(safeData);
+    }
+
+    console.log("🔄 UPDATE:", safeData.username);
 
     res.json({ ok: true });
 });
@@ -135,15 +173,13 @@ img { width:50px; border-radius:8px; }
 </style>
 </head>
 <body>
-<h2 style="padding:10px;">Dashboard</h2>
+<h2 style="padding:10px;">LIVE Dashboard</h2>
 <div>${cards}</div>
 </body>
 </html>
     `);
 });
 
-// ======================
-// START
 // ======================
 app.listen(3000, () => {
     console.log("🚀 API running on port 3000");
