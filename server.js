@@ -1,118 +1,150 @@
 const express = require("express");
-const rateLimit = require("express-rate-limit");
-const crypto = require("crypto");
-
 const app = express();
-app.use(express.json({ limit: "50kb" }));
+
+app.use(express.json());
 
 // ======================
-// SECURITY CONFIG
+// MEMORY DB
 // ======================
-const SECRET = process.env.API_SECRET || "CHANGE_THIS_NOW";
+let memoryPlayers = [];
 
-// Rate limit (basic anti-spam)
-app.use("/player-update", rateLimit({
-    windowMs: 60 * 1000,
-    max: 60
-}));
+// simple anti-spam
+const lastRequest = new Map();
 
-// Memory cache
-let players = new Map();
+function isSpam(userId) {
+    const now = Date.now();
+    const last = lastRequest.get(userId) || 0;
 
-// ======================
-// HELPER: VERIFY SIGNATURE
-// ======================
-function verifySignature(body, signature) {
-    const expected = crypto
-        .createHmac("sha256", SECRET)
-        .update(JSON.stringify(body))
-        .digest("hex");
+    if (now - last < 1500) return true;
 
-    return signature === expected;
+    lastRequest.set(userId, now);
+    return false;
 }
 
 // ======================
-// SANITIZE OUTPUT (XSS FIX)
+// HOME
 // ======================
-function escapeHtml(str) {
-    return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
-}
+app.get("/", (req, res) => {
+    res.send("✅ Inventory API Online (CLEAN VERSION)");
+});
 
 // ======================
-// RECEIVE SNAPSHOT (LOCKED DOWN)
+// PLAYER JOIN
 // ======================
-app.post("/player-update", (req, res) => {
-
-    const signature = req.headers["x-signature"];
-
-    if (!verifySignature(req.body, signature)) {
-        return res.status(403).send("Forbidden");
-    }
-
-    const { userId, username, data } = req.body;
-
-    if (
-        typeof userId !== "number" ||
-        typeof username !== "string" ||
-        typeof data !== "object"
-    ) {
-        return res.status(400).send("Invalid");
-    }
-
-    players.set(userId, {
+app.post("/player-join", (req, res) => {
+    const {
         userId,
         username,
-        data,
-        time: Date.now()
-    });
+        ownedSkins,
+        equippedSkin,
+        cases
+    } = req.body;
+
+    // VALIDATION
+    if (!userId || !username) {
+        return res.status(400).send("Missing data");
+    }
+
+    if (isSpam(userId)) {
+        return res.status(429).send("Too many requests");
+    }
+
+    const safeData = {
+        userId: String(userId),
+        username: String(username),
+
+        ownedSkins: Array.isArray(ownedSkins) ? ownedSkins : [],
+        equippedSkin: typeof equippedSkin === "string" ? equippedSkin : "Knife",
+
+        cases: (cases && typeof cases === "object") ? cases : {},
+
+        time: new Date().toISOString()
+    };
+
+    const index = memoryPlayers.findIndex(p => p.userId === safeData.userId);
+
+    if (index !== -1) memoryPlayers[index] = safeData;
+    else memoryPlayers.push(safeData);
+
+    console.log("📥 PLAYER:", username);
 
     res.json({ ok: true });
 });
 
 // ======================
-// GET PLAYERS
+// PLAYERS
 // ======================
 app.get("/players", (req, res) => {
-    res.json([...players.values()]);
+    res.json(memoryPlayers);
 });
 
 // ======================
-// DASHBOARD (SAFE)
+// SINGLE PLAYER
+// ======================
+app.get("/players/:id", (req, res) => {
+    const player = memoryPlayers.find(p => p.userId === req.params.id);
+
+    if (!player) return res.status(404).json({ error: "Not found" });
+
+    res.json(player);
+});
+
+// ======================
+// DASHBOARD
 // ======================
 app.get("/dashboard", (req, res) => {
 
-    const list = [...players.values()];
+    const cards = memoryPlayers.map(p => {
 
-    const html = list.map(p => {
-
-        const data = p.data || {};
-        const skins = data.OwnedSkins || [];
-        const cases = data.Cases || {};
+        const skins = Array.isArray(p.ownedSkins) ? p.ownedSkins : [];
+        const cases = p.cases || {};
 
         let caseCount = 0;
-        for (let k in cases) caseCount += cases[k];
+        for (let k in cases) {
+            caseCount += Number(cases[k]) || 0;
+        }
 
         return `
-        <div style="padding:10px;margin:10px;background:#222;color:white;">
-            <b>${escapeHtml(p.username)}</b><br>
-            Skins: ${Array.isArray(skins) ? skins.length : 0}<br>
-            Cases: ${caseCount}
+        <div class="card">
+            <div class="top">
+                <img src="https://www.roblox.com/headshot-thumbnail/image?userId=${p.userId}&width=420&height=420&format=png" />
+                <div>
+                    <b>${p.username}</b><br>
+                    <small>${p.userId}</small>
+                </div>
+            </div>
+
+            <div class="stats">
+                <div>Skins: ${skins.length}</div>
+                <div>Cases: ${caseCount}</div>
+                <div>Equipped: ${p.equippedSkin}</div>
+            </div>
         </div>
         `;
     }).join("");
 
     res.send(`
-        <html>
-        <body style="background:#111;color:white;font-family:Arial;">
-        <h2>SERVER AUTHORITATIVE DASHBOARD</h2>
-        ${html}
-        </body>
-        </html>
+<html>
+<head>
+<style>
+body { margin:0; font-family:Arial; background:#0b0f1a; color:white; }
+.card { background:#121a2a; margin:10px; padding:10px; border-radius:10px; }
+.top { display:flex; gap:10px; align-items:center; }
+img { width:50px; border-radius:8px; }
+.stats { display:flex; justify-content:space-between; margin-top:10px; }
+</style>
+</head>
+<body>
+<h2 style="padding:10px;">Dashboard</h2>
+<div>${cards}</div>
+</body>
+</html>
     `);
 });
 
-app.listen(3000, () => console.log("API running"));
+// ======================
+// START
+// ======================
+app.listen(3000, () => {
+    console.log("🚀 API running on port 3000");
+});
